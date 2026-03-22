@@ -52,7 +52,7 @@ disabled = false
 
 [os.symbols]
 Ubuntu = "󰕈 "
-Macos = " "
+Macos = " "
 
 [java]
 format = '[${symbol}(${version} )]($style)'
