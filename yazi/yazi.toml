@@ -5,7 +5,7 @@
 [mgr]
 # ratio          = [ 1, 4, 3 ]
 # ratio          = [ 0, 1, 1 ]
-ratio          = [ 1, 4, 4 ]
+ratio          = [ 2, 4, 4 ]
 sort_by        = "alphabetical"
 sort_sensitive = false
 sort_reverse 	 = false
@@ -92,7 +92,7 @@ suppress_preload = false
 
 fetchers = [
 	# Mimetype
-	{ id = "mime", url = "*", run = "mime", prio = "high" },
+	{ id = "mime", url = "*", run = "mime.local", prio = "high" },
 ]
 spotters = [
 	{ url = "*/", run = "folder" },
