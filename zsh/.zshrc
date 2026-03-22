@@ -24,6 +24,12 @@ SAVEHIST=50000
 setopt SHARE_HISTORY
 setopt HIST_IGNORE_DUPS
 
+# Development Environment
+## fnm - https://github.com/Schniz/fnm?tab=readme-ov-file#shell-setup
+if command -v fnm >/dev/null 2>&1; then
+  eval "$(fnm env --use-on-cd --shell zsh)"
+fi
+
 # Yazi: cd to the last directory after quit
 ## https://yazi-rs.github.io/docs/quick-start
 function y() {
