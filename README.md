@@ -7,6 +7,9 @@
 - shell-theme : starship
 - terminal-file-mgr : yazi
 
+> [!TIP]  
+> 终端中有部分场景需要显示特殊字符，安装一种 [Nerd Font](https://www.nerdfonts.com/) 并在终端启用。
+
 ## 安装
 
 ```bash
