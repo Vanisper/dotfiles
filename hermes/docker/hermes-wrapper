@@ -38,13 +38,34 @@ DIM='\033[2m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
+# 从配置文件中提取所有 mount 路径（去重）
+# 输出: 每行一条路径
+paths_get_mounts() {
+    if [ -f "$PATHS_FILE" ]; then
+        awk '
+            /^(mount|skip):/ {
+                i = index($0, ":")
+                s = substr($0, 1, i-1)
+                r = substr($0, i+1)
+                if (s == "mount" && !seen[r]++) print r
+            }
+        ' "$PATHS_FILE"
+    fi
+}
+
 # 读取配置文件中指定路径的状态
 # 输出: mount / skip / 空(不存在)
 paths_get_status() {
     local target_path="$1"
     if [ -f "$PATHS_FILE" ]; then
-        grep -E "^(mount|skip):${target_path}$" "$PATHS_FILE" 2>/dev/null \
-            | head -1 | cut -d: -f1
+        awk -v p="$target_path" '
+            /^(mount|skip):/ {
+                i = index($0, ":")
+                s = substr($0, 1, i-1)
+                r = substr($0, i+1)
+                if (r == p) { print s; exit }
+            }
+        ' "$PATHS_FILE"
     fi
 }
 
@@ -55,9 +76,8 @@ paths_find_covering_parent() {
     if [ ! -f "$PATHS_FILE" ]; then
         return
     fi
-    # 收集所有 mount 路径，按长度降序排列（找最近的父路径）
     local mount_paths
-    mount_paths=$(grep "^mount:" "$PATHS_FILE" | cut -d: -f2- | awk '!seen[$0]++')
+    mount_paths=$(paths_get_mounts)
     local best=""
     while IFS= read -r mp; do
         [ -z "$mp" ] && continue
@@ -73,37 +93,36 @@ paths_find_covering_parent() {
 
 # 写入或更新路径配置
 # 用法: paths_upsert <status> <path>
-# 行为: 删除旧记录，在文件顶部插入新记录
+# 行为: 删除旧记录，将新记录置顶，重写文件
 paths_upsert() {
     local status="$1"
     local target_path="$2"
 
-    # 确保文件存在
-    if [ ! -f "$PATHS_FILE" ]; then
-        {
-            echo "# hermes-wrapper 路径配置"
-            echo "# 格式: 状态:绝对路径"
-            echo "# 状态: mount(挂载) / skip(跳过)"
-            echo ""
-        } > "$PATHS_FILE"
+    # 收集去重后的剩余数据行
+    local remaining=""
+    if [ -f "$PATHS_FILE" ]; then
+        remaining=$(awk -v p="$target_path" '
+            /^(mount|skip):/ {
+                i = index($0, ":")
+                s = substr($0, 1, i-1)
+                r = substr($0, i+1)
+                if (r == p) next
+                print
+            }
+        ' "$PATHS_FILE")
     fi
 
-    # 去重：删除已存在的同名路径记录
-    local tmp_file
-    tmp_file=$(mktemp)
-    grep -v "^\\(mount\\|skip\\):${target_path}$" "$PATHS_FILE" > "$tmp_file" || true
-
-    # 在顶部（跳过注释头）插入新记录
+    # 重写文件：注释头 + 新记录 + 剩余数据
     {
-        # 读取前4行（注释头）
-        head -4 "$tmp_file"
-        # 插入新记录
+        echo "# hermes-wrapper 路径配置"
+        echo "# 格式: 状态:绝对路径"
+        echo "# 状态: mount(持久化挂载) / skip(跳过持久化)"
+        echo ""
         echo "${status}:${target_path}"
-        # 读取剩余行（跳过前4行）
-        tail -n +5 "$tmp_file"
+        if [ -n "$remaining" ]; then
+            echo "$remaining"
+        fi
     } > "$PATHS_FILE"
-
-    rm -f "$tmp_file"
 }
 
 # 前缀剪枝（Prefix Pruning）
@@ -114,12 +133,10 @@ paths_prefix_prune() {
     local -a all_paths=()
 
     # 收集配置中的 mount 路径
-    if [ -f "$PATHS_FILE" ]; then
-        while IFS= read -r mp; do
-            [ -z "$mp" ] && continue
-            all_paths+=("$mp")
-        done <<< "$(grep "^mount:" "$PATHS_FILE" | cut -d: -f2- | awk '!seen[$0]++')"
-    fi
+    while IFS= read -r mp; do
+        [ -z "$mp" ] && continue
+        all_paths+=("$mp")
+    done <<< "$(paths_get_mounts)"
 
     # 加入额外路径（如 CWD），与配置路径统一剪枝
     if [ -n "$extra_path" ]; then
@@ -157,21 +174,21 @@ paths_prefix_prune() {
 # 3. 旧路径 skip → 问询是否改为挂载
 handle_workspace_path() {
     local cwd="$1"
-    local status
+    local status covering default_ans ans
+
     status=$(paths_get_status "$cwd")
 
     if [ -z "$status" ]; then
         # 新路径
-        local covering
         covering=$(paths_find_covering_parent "$cwd")
         echo -e "${CYAN}🆕 新路径:${RESET} $cwd"
         if [ -n "$covering" ]; then
             echo -e "${DIM}   已被挂载路径 $covering 覆盖，本次仍可访问${RESET}"
             echo -e "${YELLOW}   是否设为持久化挂载? [y/N]${RESET}"
-            local default_ans="N"
+            default_ans="N"
         else
             echo -e "${YELLOW}   是否设为持久化挂载? [Y/n]${RESET}"
-            local default_ans="Y"
+            default_ans="Y"
         fi
         read -r ans </dev/tty
         ans="${ans:-$default_ans}"
@@ -188,7 +205,6 @@ handle_workspace_path() {
         echo -e "${GREEN}📂 $cwd → 已持久化挂载${RESET}"
     else
         # 旧路径，skip
-        local covering
         covering=$(paths_find_covering_parent "$cwd")
         if [ -n "$covering" ]; then
             echo -e "${DIM}📂 $cwd → 未持久化（已被 $covering 覆盖，本次仍可访问）${RESET}"
@@ -225,10 +241,13 @@ generate_volume_args() {
 }
 
 # 生成容器内工作目录（-w 参数）
-# 规则: CWD 一定作为工作目录
+# 参数: $1 = CWD, $2 = 是否交互模式 (true/false)
+# 交互模式 → 指向具体项目目录
+# 非交互模式 → 指向 /workspace（俯瞰所有挂载）
 generate_workdir() {
     local cwd="$1"
-    if [ -n "$cwd" ]; then
+    local interactive="${2:-true}"
+    if [ "$interactive" = true ] && [ -n "$cwd" ]; then
         echo "/workspace${cwd}"
     else
         echo "/workspace"
@@ -275,19 +294,37 @@ GATEWAY_OPTS=(
 # 工作目录（用于需要挂载项目目录的命令）
 WORKSPACE="${HERMES_PROJECT_PATH:-$(pwd -P)}"
 
-# 对需要工作目录的命令，处理路径配置
-if echo "$NEEDS_WORKSPACE" | grep -qw "$COMMAND"; then
-    handle_workspace_path "$WORKSPACE"
-    echo ""
+# 判断是否交互式（是否启用持久化问询）
+# HERMES_INTERACTIVE:
+#   不设置 / 1/true → 交互（问询持久化）
+#   0/false         → 静默（不问询）
+# 无 TTY 时自动降级为静默
+IS_INTERACTIVE=true
+if [ -n "${HERMES_INTERACTIVE:-}" ]; then
+    case "$HERMES_INTERACTIVE" in
+        0|false|False|FALSE) IS_INTERACTIVE=false ;;
+    esac
+elif [ ! -t 0 ] || [ ! -t 1 ]; then
+    # 没有 TTY，自动静默
+    IS_INTERACTIVE=false
 fi
 
-# 生成挂载参数
+# 对需要工作目录的命令，处理路径配置并生成挂载参数
 if echo "$NEEDS_WORKSPACE" | grep -qw "$COMMAND"; then
+    if [ "$IS_INTERACTIVE" = true ]; then
+        # 交互模式：走完整问询流程
+        handle_workspace_path "$WORKSPACE"
+        echo ""
+    else
+        # 非交互模式：静默，CWD 参与剪枝但不问询不写配置
+        echo -e "${DIM}📂 $WORKSPACE → 临时挂载（非交互模式）${RESET}"
+    fi
+
     VOLUME_ARGS=()
     while IFS= read -r line; do
         VOLUME_ARGS+=("$line")
     done <<< "$(generate_volume_args "$WORKSPACE")"
-    CONTAINER_WORKDIR=$(generate_workdir "$WORKSPACE")
+    CONTAINER_WORKDIR=$(generate_workdir "$WORKSPACE" "$IS_INTERACTIVE")
 fi
 
 case "$COMMAND" in
@@ -383,6 +420,7 @@ case "$COMMAND" in
         >&2 echo "  HERMES_DASHBOARD_PORT Dashboard端口（默认：19119）"
         >&2 echo "  HERMES_PROJECT_PATH   工作目录（默认：当前目录）"
         >&2 echo "  HERMES_DASHBOARD=1    启用dashboard"
+        >&2 echo "  HERMES_INTERACTIVE=0  静默模式（不问询持久化）"
         exit 1
         ;;
 esac
