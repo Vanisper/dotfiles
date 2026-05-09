@@ -9,6 +9,7 @@
 #   hermes-wrapper acp            - ACP模式（编辑器集成）
 #   hermes-wrapper logs           - 查看日志
 #   hermes-wrapper stop           - 停止网关
+#   hermes-wrapper config         - 查看配置文件路径
 #
 # 环境变量：
 #   HERMES_IMAGE                  - Docker镜像名（默认：nousresearch/hermes-agent）
@@ -401,8 +402,22 @@ case "$COMMAND" in
             echo "Hermes网关未运行"
         fi
         ;;
+    config)
+        # 显示配置文件路径及内容摘要
+        echo -e "${BOLD}配置文件路径:${RESET}"
+        echo -e "  $PATHS_FILE"
+        echo ""
+        if [ -f "$PATHS_FILE" ]; then
+            echo -e "${BOLD}文件内容:${RESET}"
+            cat "$PATHS_FILE"
+        else
+            echo -e "${DIM}（文件不存在，首次运行 chat/acp/gateway 时自动创建）${RESET}"
+        fi
+        echo ""
+        echo -e "${DIM}手动编辑: ${CYAN}${EDITOR:-vi} $PATHS_FILE${RESET}"
+        ;;
     *)
-        >&2 echo "用法: hermes-wrapper {chat|setup|gateway|dashboard|acp|logs|stop}"
+        >&2 echo "用法: hermes-wrapper {chat|setup|gateway|dashboard|acp|logs|stop|config}"
         >&2 echo ""
         >&2 echo "命令:"
         >&2 echo "  chat           交互式聊天（CLI）"
@@ -412,6 +427,7 @@ case "$COMMAND" in
         >&2 echo "  acp            ACP模式（编辑器集成）"
         >&2 echo "  logs           查看日志"
         >&2 echo "  stop           停止网关"
+        >&2 echo "  config         查看配置文件路径"
         >&2 echo ""
         >&2 echo "环境变量:"
         >&2 echo "  HERMES_IMAGE          Docker镜像名（默认：nousresearch/hermes-agent）"
