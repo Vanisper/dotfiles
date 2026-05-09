@@ -20,6 +20,228 @@
 
 set -e
 
+# ============================================================
+# 路径配置管理
+# ============================================================
+
+# 配置文件：与 wrapper 同目录
+WRAPPER_DIR="$(cd "$(dirname "$0")" && pwd)"
+PATHS_FILE="$WRAPPER_DIR/.hermes-wrapper.paths"
+
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+DIM='\033[2m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+# 读取配置文件中指定路径的状态
+# 输出: mount / skip / 空(不存在)
+paths_get_status() {
+    local target_path="$1"
+    if [ -f "$PATHS_FILE" ]; then
+        grep -E "^(mount|skip):${target_path}$" "$PATHS_FILE" 2>/dev/null \
+            | head -1 | cut -d: -f1
+    fi
+}
+
+# 查找覆盖指定路径的父路径（已设为mount的）
+# 输出: 最近的mount父路径，或空
+paths_find_covering_parent() {
+    local target_path="$1"
+    if [ ! -f "$PATHS_FILE" ]; then
+        return
+    fi
+    # 收集所有 mount 路径，按长度降序排列（找最近的父路径）
+    local mount_paths
+    mount_paths=$(grep "^mount:" "$PATHS_FILE" | cut -d: -f2- | awk '!seen[$0]++')
+    local best=""
+    while IFS= read -r mp; do
+        [ -z "$mp" ] && continue
+        # 父路径条件：target_path 以 mp/ 开头，且 mp != target_path
+        if [ "$target_path" != "$mp" ] && [ "${target_path#$mp/}" != "$target_path" ]; then
+            if [ -z "$best" ] || [ ${#mp} -gt ${#best} ]; then
+                best="$mp"
+            fi
+        fi
+    done <<< "$mount_paths"
+    echo "$best"
+}
+
+# 写入或更新路径配置
+# 用法: paths_upsert <status> <path>
+# 行为: 删除旧记录，在文件顶部插入新记录
+paths_upsert() {
+    local status="$1"
+    local target_path="$2"
+
+    # 确保文件存在
+    if [ ! -f "$PATHS_FILE" ]; then
+        {
+            echo "# hermes-wrapper 路径配置"
+            echo "# 格式: 状态:绝对路径"
+            echo "# 状态: mount(挂载) / skip(跳过)"
+            echo ""
+        } > "$PATHS_FILE"
+    fi
+
+    # 去重：删除已存在的同名路径记录
+    local tmp_file
+    tmp_file=$(mktemp)
+    grep -v "^\\(mount\\|skip\\):${target_path}$" "$PATHS_FILE" > "$tmp_file" || true
+
+    # 在顶部（跳过注释头）插入新记录
+    {
+        # 读取前4行（注释头）
+        head -4 "$tmp_file"
+        # 插入新记录
+        echo "${status}:${target_path}"
+        # 读取剩余行（跳过前4行）
+        tail -n +5 "$tmp_file"
+    } > "$PATHS_FILE"
+
+    rm -f "$tmp_file"
+}
+
+# 前缀剪枝（Prefix Pruning）
+# 参数: $1 = 可选的额外路径（如 CWD），与配置文件中的 mount 路径一起参与剪枝
+# 输出: 去重后的最小挂载路径集合（每行一条）
+paths_prefix_prune() {
+    local extra_path="${1:-}"
+    local -a all_paths=()
+
+    # 收集配置中的 mount 路径
+    if [ -f "$PATHS_FILE" ]; then
+        while IFS= read -r mp; do
+            [ -z "$mp" ] && continue
+            all_paths+=("$mp")
+        done <<< "$(grep "^mount:" "$PATHS_FILE" | cut -d: -f2- | awk '!seen[$0]++')"
+    fi
+
+    # 加入额外路径（如 CWD），与配置路径统一剪枝
+    if [ -n "$extra_path" ]; then
+        all_paths+=("$extra_path")
+    fi
+
+    # 按路径长度升序排列（短路径优先，父目录优先）
+    local sorted_str
+    sorted_str=$(for p in "${all_paths[@]}"; do echo "${#p} $p"; done | sort -n | cut -d' ' -f2-)
+
+    local -a kept=()
+    while IFS= read -r mp; do
+        [ -z "$mp" ] && continue
+        local covered=false
+        for kp in "${kept[@]}"; do
+            # 精确相等，或 mp 是 kp 的子路径
+            if [ "$mp" = "$kp" ] || [ "${mp#$kp/}" != "$mp" ]; then
+                covered=true
+                break
+            fi
+        done
+        if [ "$covered" = false ]; then
+            kept+=("$mp")
+        fi
+    done <<< "$sorted_str"
+
+    for kp in "${kept[@]}"; do
+        echo "$kp"
+    done
+}
+
+# 交互式处理当前工作目录
+# 1. 新路径 → 问询是否挂载
+# 2. 旧路径 mount → 静默提示
+# 3. 旧路径 skip → 问询是否改为挂载
+handle_workspace_path() {
+    local cwd="$1"
+    local status
+    status=$(paths_get_status "$cwd")
+
+    if [ -z "$status" ]; then
+        # 新路径
+        local covering
+        covering=$(paths_find_covering_parent "$cwd")
+        echo -e "${CYAN}🆕 新路径:${RESET} $cwd"
+        if [ -n "$covering" ]; then
+            echo -e "${DIM}   已被挂载路径 $covering 覆盖，本次仍可访问${RESET}"
+            echo -e "${YELLOW}   是否设为持久化挂载? [y/N]${RESET}"
+            local default_ans="N"
+        else
+            echo -e "${YELLOW}   是否设为持久化挂载? [Y/n]${RESET}"
+            local default_ans="Y"
+        fi
+        read -r ans </dev/tty
+        ans="${ans:-$default_ans}"
+        if [[ "$ans" =~ ^[Yy] ]]; then
+            paths_upsert "mount" "$cwd"
+            echo -e "${GREEN}   ✓ 已持久化挂载${RESET}"
+        else
+            paths_upsert "skip" "$cwd"
+            echo -e "${DIM}   ○ 本次临时挂载（未持久化）${RESET}"
+        fi
+    elif [ "$status" = "mount" ]; then
+        # 旧路径，已持久化挂载
+        paths_upsert "mount" "$cwd"  # 刷新到顶部
+        echo -e "${GREEN}📂 $cwd → 已持久化挂载${RESET}"
+    else
+        # 旧路径，skip
+        local covering
+        covering=$(paths_find_covering_parent "$cwd")
+        if [ -n "$covering" ]; then
+            echo -e "${DIM}📂 $cwd → 未持久化（已被 $covering 覆盖，本次仍可访问）${RESET}"
+        else
+            echo -e "${YELLOW}📂 $cwd → 未持久化（本次临时挂载）${RESET}"
+        fi
+        echo -e "${YELLOW}   是否设为持久化挂载? [y/N]${RESET}"
+        read -r ans </dev/tty
+        if [[ "$ans" =~ ^[Yy] ]]; then
+            paths_upsert "mount" "$cwd"
+            echo -e "${GREEN}   ✓ 已持久化挂载${RESET}"
+        else
+            paths_upsert "skip" "$cwd"
+        fi
+    fi
+}
+
+# 生成 Docker -v 挂载参数
+# 参数: $1 = CWD（当前工作目录）
+# 输出: bash 数组元素，每个元素为 "-v" 或 "host:container"
+# 逻辑: CWD 与配置路径统一前缀剪枝，避免父子重复挂载
+generate_volume_args() {
+    local cwd="$1"
+    local -a vol_args=()
+    local pruned
+    pruned=$(paths_prefix_prune "$cwd")
+
+    while IFS= read -r mp; do
+        [ -z "$mp" ] && continue
+        vol_args+=("-v" "${mp}:/workspace${mp}")
+    done <<< "$pruned"
+
+    printf '%s\n' "${vol_args[@]}"
+}
+
+# 生成容器内工作目录（-w 参数）
+# 规则: CWD 一定作为工作目录
+generate_workdir() {
+    local cwd="$1"
+    if [ -n "$cwd" ]; then
+        echo "/workspace${cwd}"
+    else
+        echo "/workspace"
+    fi
+}
+
+# 需要工作目录挂载的命令
+NEEDS_WORKSPACE="chat acp gateway"
+
+# ============================================================
+# 主流程
+# ============================================================
+
 # 默认配置
 HERMES_IMAGE="${HERMES_IMAGE:-nousresearch/hermes-agent}"
 HERMES_DATA="${HERMES_DATA:-$HOME/.hermes}"
@@ -51,14 +273,29 @@ GATEWAY_OPTS=(
 )
 
 # 工作目录（用于需要挂载项目目录的命令）
-WORKSPACE="${HERMES_PROJECT_PATH:-$(pwd)}"
+WORKSPACE="${HERMES_PROJECT_PATH:-$(pwd -P)}"
+
+# 对需要工作目录的命令，处理路径配置
+if echo "$NEEDS_WORKSPACE" | grep -qw "$COMMAND"; then
+    handle_workspace_path "$WORKSPACE"
+    echo ""
+fi
+
+# 生成挂载参数
+if echo "$NEEDS_WORKSPACE" | grep -qw "$COMMAND"; then
+    VOLUME_ARGS=()
+    while IFS= read -r line; do
+        VOLUME_ARGS+=("$line")
+    done <<< "$(generate_volume_args "$WORKSPACE")"
+    CONTAINER_WORKDIR=$(generate_workdir "$WORKSPACE")
+fi
 
 case "$COMMAND" in
     chat)
         # 交互式聊天（直接运行镜像，不需要chat参数）
         docker run -it "${DOCKER_OPTS[@]}" \
-            -v "$WORKSPACE:/workspace" \
-            -w /workspace \
+            "${VOLUME_ARGS[@]}" \
+            -w "$CONTAINER_WORKDIR" \
             "$HERMES_IMAGE"
         ;;
     setup)
@@ -80,6 +317,8 @@ case "$COMMAND" in
                 --name hermes \
                 -e "HERMES_DASHBOARD=${HERMES_DASHBOARD:-}" \
                 -p "${HERMES_DASHBOARD_PORT}:9119" \
+                "${VOLUME_ARGS[@]}" \
+                -w "$CONTAINER_WORKDIR" \
                 "$HERMES_IMAGE" gateway run
             echo "网关已启动，使用 'hermes-wrapper logs' 查看日志"
         fi
@@ -101,9 +340,9 @@ case "$COMMAND" in
         docker run -i --rm \
             -e "HERMES_UID=$HERMES_UID" \
             -e "HERMES_GID=$HERMES_GID" \
-            -v "$WORKSPACE:/workspace" \
             -v "$HERMES_DATA:/opt/data" \
-            -w /workspace \
+            "${VOLUME_ARGS[@]}" \
+            -w "$CONTAINER_WORKDIR" \
             "$HERMES_IMAGE" acp
         ;;
     logs)
@@ -142,7 +381,7 @@ case "$COMMAND" in
         >&2 echo "  HERMES_DATA           数据目录（默认：~/.hermes）"
         >&2 echo "  HERMES_PORT           Gateway端口（默认：18642）"
         >&2 echo "  HERMES_DASHBOARD_PORT Dashboard端口（默认：19119）"
-        >&2 echo "  HERMES_PROJECT_PATH   ACP模式的工作目录（默认：当前目录）"
+        >&2 echo "  HERMES_PROJECT_PATH   工作目录（默认：当前目录）"
         >&2 echo "  HERMES_DASHBOARD=1    启用dashboard"
         exit 1
         ;;
