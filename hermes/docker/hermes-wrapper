@@ -1,0 +1,149 @@
+#!/bin/bash
+# Hermes Agent通用Wrapper
+#
+# 用法：
+#   hermes-wrapper chat           - 交互式聊天（CLI）
+#   hermes-wrapper setup          - 配置向导
+#   hermes-wrapper gateway        - 启动网关（后台）
+#   hermes-wrapper dashboard      - 启动Dashboard
+#   hermes-wrapper acp            - ACP模式（编辑器集成）
+#   hermes-wrapper logs           - 查看日志
+#   hermes-wrapper stop           - 停止网关
+#
+# 环境变量：
+#   HERMES_IMAGE                  - Docker镜像名（默认：nousresearch/hermes-agent）
+#   HERMES_DATA                   - 数据目录（默认：~/.hermes）
+#   HERMES_PORT                   - Gateway端口（默认：18642）
+#   HERMES_DASHBOARD_PORT         - Dashboard端口（默认：19119）
+#   HERMES_UID / HERMES_GID       - 用户权限映射
+#   HERMES_DASHBOARD              - 启用dashboard（1或true）
+
+set -e
+
+# 默认配置
+HERMES_IMAGE="${HERMES_IMAGE:-nousresearch/hermes-agent}"
+HERMES_DATA="${HERMES_DATA:-$HOME/.hermes}"
+HERMES_UID="${HERMES_UID:-$(id -u)}"
+HERMES_GID="${HERMES_GID:-$(id -g)}"
+HERMES_PORT="${HERMES_PORT:-18642}"
+HERMES_DASHBOARD_PORT="${HERMES_DASHBOARD_PORT:-19119}"
+
+# 获取命令
+COMMAND="${1:-}"
+shift || true
+
+# 通用Docker运行选项
+DOCKER_OPTS=(
+    --rm
+    -e "HERMES_UID=$HERMES_UID"
+    -e "HERMES_GID=$HERMES_GID"
+    -v "$HERMES_DATA:/opt/data"
+)
+
+# Gateway专用选项（不使用--rm）
+GATEWAY_OPTS=(
+    -d
+    --restart unless-stopped
+    -e "HERMES_UID=$HERMES_UID"
+    -e "HERMES_GID=$HERMES_GID"
+    -v "$HERMES_DATA:/opt/data"
+    -p "${HERMES_PORT}:8642"
+)
+
+# 工作目录（用于需要挂载项目目录的命令）
+WORKSPACE="${HERMES_PROJECT_PATH:-$(pwd)}"
+
+case "$COMMAND" in
+    chat)
+        # 交互式聊天（直接运行镜像，不需要chat参数）
+        docker run -it "${DOCKER_OPTS[@]}" \
+            -v "$WORKSPACE:/workspace" \
+            -w /workspace \
+            "$HERMES_IMAGE"
+        ;;
+    setup)
+        # 配置向导
+        docker run -it "${DOCKER_OPTS[@]}" \
+            "$HERMES_IMAGE" setup "$@"
+        ;;
+    gateway)
+        # 启动网关（后台运行）
+        if docker ps --format '{{.Names}}' | grep -q '^hermes$'; then
+            echo "Hermes网关已在运行"
+            docker ps | grep hermes
+        else
+            # 如果容器已存在但未运行，先删除
+            docker ps -a --format '{{.Names}}' | grep -q '^hermes$' && docker rm -f hermes >/dev/null 2>&1 || true
+
+            echo "启动Hermes网关..."
+            docker run "${GATEWAY_OPTS[@]}" \
+                --name hermes \
+                -e "HERMES_DASHBOARD=${HERMES_DASHBOARD:-}" \
+                -p "${HERMES_DASHBOARD_PORT}:9119" \
+                "$HERMES_IMAGE" gateway run
+            echo "网关已启动，使用 'hermes-wrapper logs' 查看日志"
+        fi
+        ;;
+    dashboard)
+        # 启用dashboard并重启网关
+        # 递归调用自身，设置环境变量后执行 gateway 命令
+        HERMES_DASHBOARD=1 "$0" gateway
+        echo ""
+        echo "Dashboard: http://localhost:${HERMES_DASHBOARD_PORT}"
+        echo "Gateway API: http://localhost:${HERMES_PORT}"
+        ;;
+    acp)
+        # ACP模式（编辑器集成）
+        if [ ! -d "$WORKSPACE" ]; then
+            >&2 echo "错误：项目目录不存在：$WORKSPACE"
+            exit 1
+        fi
+        docker run -i --rm \
+            -e "HERMES_UID=$HERMES_UID" \
+            -e "HERMES_GID=$HERMES_GID" \
+            -v "$WORKSPACE:/workspace" \
+            -v "$HERMES_DATA:/opt/data" \
+            -w /workspace \
+            "$HERMES_IMAGE" acp
+        ;;
+    logs)
+        # 查看日志
+        if docker ps --format '{{.Names}}' | grep -q '^hermes$'; then
+            docker logs -f hermes
+        else
+            >&2 echo "Hermes网关未运行"
+            exit 1
+        fi
+        ;;
+    stop)
+        # 停止网关
+        if docker ps --format '{{.Names}}' | grep -q '^hermes$'; then
+            docker stop hermes
+            docker rm hermes
+            echo "Hermes网关已停止"
+        else
+            echo "Hermes网关未运行"
+        fi
+        ;;
+    *)
+        >&2 echo "用法: hermes-wrapper {chat|setup|gateway|dashboard|acp|logs|stop}"
+        >&2 echo ""
+        >&2 echo "命令:"
+        >&2 echo "  chat           交互式聊天（CLI）"
+        >&2 echo "  setup          配置向导"
+        >&2 echo "  gateway        启动网关（后台）"
+        >&2 echo "  dashboard      启用Dashboard"
+        >&2 echo "  acp            ACP模式（编辑器集成）"
+        >&2 echo "  logs           查看日志"
+        >&2 echo "  stop           停止网关"
+        >&2 echo ""
+        >&2 echo "环境变量:"
+        >&2 echo "  HERMES_IMAGE          Docker镜像名（默认：nousresearch/hermes-agent）"
+        >&2 echo "  HERMES_DATA           数据目录（默认：~/.hermes）"
+        >&2 echo "  HERMES_PORT           Gateway端口（默认：18642）"
+        >&2 echo "  HERMES_DASHBOARD_PORT Dashboard端口（默认：19119）"
+        >&2 echo "  HERMES_PROJECT_PATH   ACP模式的工作目录（默认：当前目录）"
+        >&2 echo "  HERMES_DASHBOARD=1    启用dashboard"
+        exit 1
+        ;;
+esac

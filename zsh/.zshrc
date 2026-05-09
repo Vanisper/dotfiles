@@ -96,3 +96,11 @@ alias gpop='git stash pop'
 if command -v fzf >/dev/null 2>&1; then
   alias gcb="git branch | fzf --preview 'git show --color=always {-1}' | cut -c 3- | xargs git checkout"
 fi
+
+# 加载 ~/.local/bin 下一些工具的环境变量
+. "$HOME/.local/bin/env"
+
+# region: >>> Hermes Agent >>>
+# 软链接: ~/.local/bin/hermes-wrapper
+alias hr='hermes-wrapper'
+# endregion <<< Hermes Agent <<<
