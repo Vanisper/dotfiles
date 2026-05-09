@@ -295,15 +295,18 @@ GATEWAY_OPTS=(
 # 工作目录（用于需要挂载项目目录的命令）
 WORKSPACE="${HERMES_PROJECT_PATH:-$(pwd -P)}"
 
-# 判断是否交互式（是否启用持久化问询）
+# 判断是否交互式（是否启用持久化问询和挂载）
 # HERMES_INTERACTIVE:
-#   不设置 / 1/true → 交互（问询持久化）
-#   0/false         → 静默（不问询）
+#   不设置 / 1/true → 交互（问询持久化，挂载CWD）
+#   0/false         → 静默（不问询，挂载CWD）
+#   -1              → 静默（不问询，不挂载CWD，仅挂载配置中的持久化路径）
 # 无 TTY 时自动降级为静默
 IS_INTERACTIVE=true
+SKIP_CWD_MOUNT=false
 if [ -n "${HERMES_INTERACTIVE:-}" ]; then
     case "$HERMES_INTERACTIVE" in
         0|false|False|FALSE) IS_INTERACTIVE=false ;;
+        -1) IS_INTERACTIVE=false; SKIP_CWD_MOUNT=true ;;
     esac
 elif [ ! -t 0 ] || [ ! -t 1 ]; then
     # 没有 TTY，自动静默
@@ -312,10 +315,15 @@ fi
 
 # 对需要工作目录的命令，处理路径配置并生成挂载参数
 if echo "$NEEDS_WORKSPACE" | grep -qw "$COMMAND"; then
+    local mount_src="$WORKSPACE"
     if [ "$IS_INTERACTIVE" = true ]; then
         # 交互模式：走完整问询流程
         handle_workspace_path "$WORKSPACE"
         echo ""
+    elif [ "$SKIP_CWD_MOUNT" = true ]; then
+        # -1 模式：不挂载 CWD，仅挂载配置中的持久化路径
+        mount_src=""
+        echo -e "${DIM}📂 跳过当前目录挂载（-1 模式）${RESET}"
     else
         # 非交互模式：静默，CWD 参与剪枝但不问询不写配置
         echo -e "${DIM}📂 $WORKSPACE → 临时挂载（非交互模式）${RESET}"
@@ -324,7 +332,7 @@ if echo "$NEEDS_WORKSPACE" | grep -qw "$COMMAND"; then
     VOLUME_ARGS=()
     while IFS= read -r line; do
         VOLUME_ARGS+=("$line")
-    done <<< "$(generate_volume_args "$WORKSPACE")"
+    done <<< "$(generate_volume_args "$mount_src")"
     CONTAINER_WORKDIR=$(generate_workdir "$WORKSPACE" "$IS_INTERACTIVE")
 fi
 
@@ -436,7 +444,8 @@ case "$COMMAND" in
         >&2 echo "  HERMES_DASHBOARD_PORT Dashboard端口（默认：19119）"
         >&2 echo "  HERMES_PROJECT_PATH   工作目录（默认：当前目录）"
         >&2 echo "  HERMES_DASHBOARD=1    启用dashboard"
-        >&2 echo "  HERMES_INTERACTIVE=0  静默模式（不问询持久化）"
+        >&2 echo "  HERMES_INTERACTIVE=0  静默模式（不问询，挂载CWD）"
+        >&2 echo "  HERMES_INTERACTIVE=-1 静默模式（不问询，不挂载CWD）"
         exit 1
         ;;
 esac
