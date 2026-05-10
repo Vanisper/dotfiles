@@ -49,7 +49,9 @@ services:
       - HERMES_DASHBOARD=1
       # Web UI 使用独立网络命名空间时，需要让 Gateway 监听容器网卡。
       - API_SERVER_HOST=0.0.0.0
-      - API_SERVER_KEY=e36652c3a5f75f3e59a315ddf87ae31a16830a8964a58fbd6a9bc3508ed970a3
+      # 需要配置到 ~/.hermes/.env 中，光在此处配置环境变量，能启用 gateway api 外部访问，但无法让 web ui 读取到，导致 web ui 无法请求部分 gateway api。
+      # web ui 通过共享目录读取 ~/.hermes/.env 中的 API_SERVER_KEY，凭借此密钥才能访问 gateway api。
+      # - API_SERVER_KEY=your_api_key_here
     ports:
       - "${HERMES_DASHBOARD_PORT:-19119}:9119"
       - "${HERMES_PORT:-18642}:8642" # 需要设置 API_SERVER_KEY 后，容器外部访问才会生效
