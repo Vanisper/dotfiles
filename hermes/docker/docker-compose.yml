@@ -40,8 +40,8 @@ services:
       # 共享 hermes 源码（webui 需要 hermes CLI）
       - hermes-src:/opt/hermes
       # 项目目录挂载（按需增减）
-      - ${HOME}/Documents/GitHub:/workspace/Users/vanisper/Documents/GitHub
-      - ${HOME}/Projects:/workspace/Volumes/projects
+      - ${HOME}/Documents/GitHub:/workspace/${HOME}/Documents/GitHub
+      - /Volumes/projects:/workspace/Volumes/projects
     environment:
       - HERMES_HOME=/opt/data
       - HERMES_UID=${HERMES_UID:-501}
