@@ -27,8 +27,17 @@ set -e
 # 路径配置管理
 # ============================================================
 
-# 配置文件：与 wrapper 同目录
-WRAPPER_DIR="$(cd "$(dirname "$0")" && pwd)"
+# 配置文件：与 wrapper 真实文件同目录（兼容 ~/.local/bin 里的软链接）
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+while [ -L "$SCRIPT_PATH" ]; do
+    LINK_TARGET="$(readlink "$SCRIPT_PATH")"
+    if [[ "$LINK_TARGET" = /* ]]; then
+        SCRIPT_PATH="$LINK_TARGET"
+    else
+        SCRIPT_PATH="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)/$LINK_TARGET"
+    fi
+done
+WRAPPER_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 PATHS_FILE="$WRAPPER_DIR/.hermes-wrapper.paths"
 COMPOSE_FILE="$WRAPPER_DIR/docker-compose.yml"
 
