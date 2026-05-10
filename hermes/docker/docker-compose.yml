@@ -39,6 +39,8 @@ services:
       - ${HERMES_DATA:-~/.hermes}:/opt/data
       # 共享 hermes 源码（webui 需要 hermes CLI）
       - hermes-src:/opt/hermes
+      # 共享 Web UI 上传目录（让 Agent 能读取用户上传的图片/文件）
+      - webui-data:/home/agent/.hermes-web-ui
       # 项目目录挂载（按需增减）
       - ${HOME}/Documents/GitHub:/workspace/${HOME}/Documents/GitHub
       - /Volumes/projects:/workspace/Volumes/projects
