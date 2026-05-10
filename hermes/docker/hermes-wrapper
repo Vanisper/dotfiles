@@ -4,11 +4,13 @@
 # 用法：
 #   hermes-wrapper chat           - 交互式聊天（CLI）
 #   hermes-wrapper setup          - 配置向导
-#   hermes-wrapper gateway        - 启动网关（后台）
-#   hermes-wrapper dashboard      - 启动Dashboard
+#   hermes-wrapper gateway        - 启动常驻 Gateway + Web UI（Compose）
+#   hermes-wrapper webui          - 启动常驻 Gateway + Web UI（Compose）
+#   hermes-wrapper dashboard      - 启动常驻 Gateway + Web UI（Compose）
 #   hermes-wrapper acp            - ACP模式（编辑器集成）
 #   hermes-wrapper logs           - 查看日志
-#   hermes-wrapper stop           - 停止网关
+#   hermes-wrapper status         - 查看 Compose 状态
+#   hermes-wrapper stop           - 停止常驻服务
 #   hermes-wrapper config         - 查看配置文件路径
 #
 # 环境变量：
@@ -28,6 +30,7 @@ set -e
 # 配置文件：与 wrapper 同目录
 WRAPPER_DIR="$(cd "$(dirname "$0")" && pwd)"
 PATHS_FILE="$WRAPPER_DIR/.hermes-wrapper.paths"
+COMPOSE_FILE="$WRAPPER_DIR/docker-compose.yml"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -256,14 +259,36 @@ generate_workdir() {
 }
 
 # 需要工作目录挂载的命令
-NEEDS_WORKSPACE="chat acp gateway"
+NEEDS_WORKSPACE="chat acp"
+
+# ============================================================
+# Compose 服务管理
+# ============================================================
+
+compose_cmd() {
+    docker compose -f "$COMPOSE_FILE" "$@"
+}
+
+ensure_compose_file() {
+    if [ ! -f "$COMPOSE_FILE" ]; then
+        >&2 echo "错误：找不到 Compose 文件：$COMPOSE_FILE"
+        exit 1
+    fi
+}
+
+print_service_urls() {
+    echo ""
+    echo "Web UI:      http://localhost:${WEBUI_PORT:-16060}"
+    echo "Dashboard:   http://localhost:${HERMES_DASHBOARD_PORT}"
+    echo "Gateway API: http://localhost:${HERMES_PORT}"
+}
 
 # ============================================================
 # 主流程
 # ============================================================
 
 # 默认配置
-HERMES_IMAGE="${HERMES_IMAGE:-nousresearch/hermes-agent}"
+HERMES_IMAGE="${HERMES_IMAGE:-nousresearch/hermes-agent:latest}"
 HERMES_DATA="${HERMES_DATA:-$HOME/.hermes}"
 HERMES_UID="${HERMES_UID:-$(id -u)}"
 HERMES_GID="${HERMES_GID:-$(id -g)}"
@@ -280,16 +305,6 @@ DOCKER_OPTS=(
     -e "HERMES_UID=$HERMES_UID"
     -e "HERMES_GID=$HERMES_GID"
     -v "$HERMES_DATA:/opt/data"
-)
-
-# Gateway专用选项（不使用--rm）
-GATEWAY_OPTS=(
-    -d
-    --restart unless-stopped
-    -e "HERMES_UID=$HERMES_UID"
-    -e "HERMES_GID=$HERMES_GID"
-    -v "$HERMES_DATA:/opt/data"
-    -p "${HERMES_PORT}:8642"
 )
 
 # 工作目录（用于需要挂载项目目录的命令）
@@ -350,32 +365,25 @@ case "$COMMAND" in
             "$HERMES_IMAGE" setup "$@"
         ;;
     gateway)
-        # 启动网关（后台运行）
-        if docker ps --format '{{.Names}}' | grep -q '^hermes$'; then
-            echo "Hermes网关已在运行"
-            docker ps | grep hermes
-        else
-            # 如果容器已存在但未运行，先删除
-            docker ps -a --format '{{.Names}}' | grep -q '^hermes$' && docker rm -f hermes >/dev/null 2>&1 || true
-
-            echo "启动Hermes网关..."
-            docker run "${GATEWAY_OPTS[@]}" \
-                --name hermes \
-                -e "HERMES_DASHBOARD=${HERMES_DASHBOARD:-}" \
-                -p "${HERMES_DASHBOARD_PORT}:9119" \
-                "${VOLUME_ARGS[@]}" \
-                -w "$CONTAINER_WORKDIR" \
-                "$HERMES_IMAGE" gateway run
-            echo "网关已启动，使用 'hermes-wrapper logs' 查看日志"
-        fi
+        # 常驻服务由 docker-compose 管理，避免再启动第二套 gateway。
+        ensure_compose_file
+        echo "启动 Hermes Gateway + Web UI..."
+        compose_cmd up -d
+        print_service_urls
+        ;;
+    webui)
+        # gateway 的别名：启动完整 Web UI 组合。
+        ensure_compose_file
+        echo "启动 Hermes Gateway + Web UI..."
+        compose_cmd up -d
+        print_service_urls
         ;;
     dashboard)
-        # 启用dashboard并重启网关
-        # 递归调用自身，设置环境变量后执行 gateway 命令
-        HERMES_DASHBOARD=1 "$0" gateway
-        echo ""
-        echo "Dashboard: http://localhost:${HERMES_DASHBOARD_PORT}"
-        echo "Gateway API: http://localhost:${HERMES_PORT}"
+        # dashboard 由 Compose 中的 hermes-agent 一起启动。
+        ensure_compose_file
+        echo "启动 Hermes Gateway + Dashboard + Web UI..."
+        compose_cmd up -d
+        print_service_urls
         ;;
     acp)
         # ACP模式（编辑器集成）
@@ -392,23 +400,20 @@ case "$COMMAND" in
             "$HERMES_IMAGE" acp
         ;;
     logs)
-        # 查看日志
-        if docker ps --format '{{.Names}}' | grep -q '^hermes$'; then
-            docker logs -f hermes
-        else
-            >&2 echo "Hermes网关未运行"
-            exit 1
-        fi
+        # 查看 Compose 日志。可追加服务名，例如：hermes-wrapper logs hermes-webui
+        ensure_compose_file
+        compose_cmd logs -f "$@"
         ;;
     stop)
-        # 停止网关
-        if docker ps --format '{{.Names}}' | grep -q '^hermes$'; then
-            docker stop hermes
-            docker rm hermes
-            echo "Hermes网关已停止"
-        else
-            echo "Hermes网关未运行"
-        fi
+        # 停止常驻服务，不删除 named volumes。
+        ensure_compose_file
+        compose_cmd down
+        echo "Hermes 常驻服务已停止"
+        ;;
+    status)
+        # 查看 Compose 状态
+        ensure_compose_file
+        compose_cmd ps
         ;;
     config)
         # 显示配置文件路径及内容摘要
@@ -419,22 +424,24 @@ case "$COMMAND" in
             echo -e "${BOLD}文件内容:${RESET}"
             cat "$PATHS_FILE"
         else
-            echo -e "${DIM}（文件不存在，首次运行 chat/acp/gateway 时自动创建）${RESET}"
+            echo -e "${DIM}（文件不存在，首次运行 chat/acp 时自动创建）${RESET}"
         fi
         echo ""
         echo -e "${DIM}手动编辑: ${CYAN}${EDITOR:-vi} $PATHS_FILE${RESET}"
         ;;
     *)
-        >&2 echo "用法: hermes-wrapper {chat|setup|gateway|dashboard|acp|logs|stop|config}"
+        >&2 echo "用法: hermes-wrapper {chat|setup|gateway|webui|dashboard|acp|logs|status|stop|config}"
         >&2 echo ""
         >&2 echo "命令:"
         >&2 echo "  chat           交互式聊天（CLI）"
         >&2 echo "  setup          配置向导"
-        >&2 echo "  gateway        启动网关（后台）"
-        >&2 echo "  dashboard      启用Dashboard"
+        >&2 echo "  gateway        启动常驻 Gateway + Web UI（Compose）"
+        >&2 echo "  webui          启动常驻 Gateway + Web UI（Compose）"
+        >&2 echo "  dashboard      启动常驻 Gateway + Dashboard + Web UI（Compose）"
         >&2 echo "  acp            ACP模式（编辑器集成）"
         >&2 echo "  logs           查看日志"
-        >&2 echo "  stop           停止网关"
+        >&2 echo "  status         查看 Compose 状态"
+        >&2 echo "  stop           停止常驻服务"
         >&2 echo "  config         查看配置文件路径"
         >&2 echo ""
         >&2 echo "环境变量:"
@@ -442,8 +449,8 @@ case "$COMMAND" in
         >&2 echo "  HERMES_DATA           数据目录（默认：~/.hermes）"
         >&2 echo "  HERMES_PORT           Gateway端口（默认：18642）"
         >&2 echo "  HERMES_DASHBOARD_PORT Dashboard端口（默认：19119）"
+        >&2 echo "  WEBUI_PORT            Web UI端口（默认：16060）"
         >&2 echo "  HERMES_PROJECT_PATH   工作目录（默认：当前目录）"
-        >&2 echo "  HERMES_DASHBOARD=1    启用dashboard"
         >&2 echo "  HERMES_INTERACTIVE=0  静默模式（不问询，挂载CWD）"
         >&2 echo "  HERMES_INTERACTIVE=-1 静默模式（不问询，不挂载CWD）"
         exit 1
