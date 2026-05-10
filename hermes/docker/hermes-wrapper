@@ -4,10 +4,12 @@
 # 用法：
 #   hermes-wrapper chat           - 交互式聊天（CLI）
 #   hermes-wrapper setup          - 配置向导
+#   hermes-wrapper model          - 选择默认模型和 provider
 #   hermes-wrapper gateway        - 启动常驻 Gateway + Web UI（Compose）
 #   hermes-wrapper webui          - 启动常驻 Gateway + Web UI（Compose）
 #   hermes-wrapper dashboard      - 启动常驻 Gateway + Web UI（Compose）
 #   hermes-wrapper acp            - ACP模式（编辑器集成）
+#   hermes-wrapper tools          - 配置启用的工具
 #   hermes-wrapper logs           - 查看日志
 #   hermes-wrapper status         - 查看 Compose 状态
 #   hermes-wrapper stop           - 停止常驻服务
@@ -337,6 +339,11 @@ elif [ ! -t 0 ] || [ ! -t 1 ]; then
     IS_INTERACTIVE=false
 fi
 
+DOCKER_TTY_ARGS=(-i)
+if [ -t 0 ] && [ -t 1 ]; then
+    DOCKER_TTY_ARGS=(-it)
+fi
+
 # 对需要工作目录的命令，处理路径配置并生成挂载参数
 if echo "$NEEDS_WORKSPACE" | grep -qw "$COMMAND"; then
     mount_src="$WORKSPACE"
@@ -363,15 +370,20 @@ fi
 case "$COMMAND" in
     chat)
         # 交互式聊天（直接运行镜像，不需要chat参数）
-        docker run -it "${DOCKER_OPTS[@]}" \
+        docker run "${DOCKER_TTY_ARGS[@]}" "${DOCKER_OPTS[@]}" \
             "${VOLUME_ARGS[@]}" \
             -w "$CONTAINER_WORKDIR" \
             "$HERMES_IMAGE"
         ;;
     setup)
         # 配置向导
-        docker run -it "${DOCKER_OPTS[@]}" \
+        docker run "${DOCKER_TTY_ARGS[@]}" "${DOCKER_OPTS[@]}" \
             "$HERMES_IMAGE" setup "$@"
+        ;;
+    model)
+        # 选择默认模型和 provider。
+        docker run "${DOCKER_TTY_ARGS[@]}" "${DOCKER_OPTS[@]}" \
+            "$HERMES_IMAGE" model "$@"
         ;;
     gateway)
         # 常驻服务由 docker-compose 管理，避免再启动第二套 gateway。
@@ -408,6 +420,11 @@ case "$COMMAND" in
             -w "$CONTAINER_WORKDIR" \
             "$HERMES_IMAGE" acp
         ;;
+    tools)
+        # 工具启用/禁用配置。支持交互 UI，也支持透传 list/enable/disable 等参数。
+        docker run "${DOCKER_TTY_ARGS[@]}" "${DOCKER_OPTS[@]}" \
+            "$HERMES_IMAGE" tools "$@"
+        ;;
     logs)
         # 查看 Compose 日志。可追加服务名，例如：hermes-wrapper logs hermes-webui
         ensure_compose_file
@@ -439,15 +456,17 @@ case "$COMMAND" in
         echo -e "${DIM}手动编辑: ${CYAN}${EDITOR:-vi} $PATHS_FILE${RESET}"
         ;;
     *)
-        >&2 echo "用法: hermes-wrapper {chat|setup|gateway|webui|dashboard|acp|logs|status|stop|config}"
+        >&2 echo "用法: hermes-wrapper {chat|setup|model|gateway|webui|dashboard|acp|tools|logs|status|stop|config}"
         >&2 echo ""
         >&2 echo "命令:"
         >&2 echo "  chat           交互式聊天（CLI）"
         >&2 echo "  setup          配置向导"
+        >&2 echo "  model          选择默认模型和 provider"
         >&2 echo "  gateway        启动常驻 Gateway + Web UI（Compose）"
         >&2 echo "  webui          启动常驻 Gateway + Web UI（Compose）"
         >&2 echo "  dashboard      启动常驻 Gateway + Dashboard + Web UI（Compose）"
         >&2 echo "  acp            ACP模式（编辑器集成）"
+        >&2 echo "  tools          配置启用的工具"
         >&2 echo "  logs           查看日志"
         >&2 echo "  status         查看 Compose 状态"
         >&2 echo "  stop           停止常驻服务"
