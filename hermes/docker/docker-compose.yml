@@ -1,0 +1,108 @@
+# ============================================================
+# Hermes Agent + Web UI — vanisper docker-compose
+# ============================================================
+#
+# 替代 hermes-wrapper 的 docker-compose 方案
+#
+# 用法：
+#   docker compose up -d              # 启动
+#   docker compose logs -f            # 日志
+#   docker compose down               # 停止
+#   docker compose logs hermes-webui  # 查看 WebUI token
+#
+# 访问地址：
+#   Web UI:      http://localhost:16060
+#   Dashboard:   http://localhost:19119
+#   Gateway API: http://localhost:18642
+#
+# 环境变量（可选）：
+#   HERMES_IMAGE         Agent 镜像（默认 nousresearch/hermes-agent:latest）
+#   WEBUI_IMAGE          WebUI 镜像（默认 ekkoye8888/hermes-web-ui:latest）
+#   HERMES_DATA          数据目录（默认 ~/.hermes）
+#   HERMES_PORT          Gateway 外部端口（默认 18642；容器内为 8642）
+#   HERMES_DASHBOARD_PORT Dashboard 端口（默认 19119；容器内为 9119）
+#   WEBUI_PORT           WebUI 外部端口（默认 16060；容器内为 6060）
+#   HERMES_UID / HERMES_GID  用户权限映射（默认当前用户）
+#   AUTH_DISABLED=1      禁用 WebUI 认证
+
+name: hermes-group
+
+services:
+  # ============================
+  # Hermes Agent（网关 + 聊天引擎）
+  # ============================
+  hermes-agent:
+    image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
+    container_name: hermes-agent
+    volumes:
+      # 共享 Hermes 数据目录（config.yaml、sessions、skills 等）
+      - ${HERMES_DATA:-~/.hermes}:/opt/data
+      # 共享 hermes 源码（webui 需要 hermes CLI）
+      - hermes-src:/opt/hermes
+      # 项目目录挂载（按需增减）
+      - ${HOME}/Documents/GitHub:/workspace/Users/vanisper/Documents/GitHub
+      - ${HOME}/Projects:/workspace/Volumes/projects
+    environment:
+      - HERMES_HOME=/opt/data
+      - HERMES_UID=${HERMES_UID:-501}
+      - HERMES_GID=${HERMES_GID:-20}
+      - HERMES_DASHBOARD=1
+      # Web UI 使用独立网络命名空间时，需要让 Gateway 监听容器网卡。
+      - API_SERVER_HOST=0.0.0.0
+      - API_SERVER_KEY=e36652c3a5f75f3e59a315ddf87ae31a16830a8964a58fbd6a9bc3508ed970a3
+    ports:
+      - "${HERMES_DASHBOARD_PORT:-19119}:9119"
+      - "${HERMES_PORT:-18642}:8642" # 需要设置 API_SERVER_KEY 后，容器外部访问才会生效
+    restart: unless-stopped
+    command: gateway run
+    stdin_open: true
+    tty: true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8642/health >/dev/null || exit 1"]
+      interval: 3s
+      timeout: 2s
+      retries: 40
+      start_period: 10s
+    networks:
+      - hermes-net
+
+  # ============================
+  # Hermes Web UI（BFF + 前端）
+  # ============================
+  hermes-webui:
+    image: ${WEBUI_IMAGE:-ekkoye8888/hermes-web-ui:latest}
+    container_name: hermes-webui
+    depends_on:
+      hermes-agent:
+        condition: service_healthy
+    # Web UI 会读取 ~/.hermes/gateway.pid 判断 Hermes Gateway 是否已运行。
+    # 共享 PID 命名空间后，Web UI 才能正确识别 hermes-agent 服务里的 Gateway 进程。
+    # 否则它将会误判而自启 agent gateway，导致多个 gateway 进程同时运行，出现进程紊乱。
+    pid: "service:hermes-agent"
+    ports:
+      - "${WEBUI_PORT:-16060}:6060"
+    volumes:
+      # 共享 Hermes 数据目录（config.yaml、sessions、skills 等）
+      - ${HERMES_DATA:-~/.hermes}:/home/agent/.hermes
+      # Web UI 自己的数据库和日志
+      - webui-data:/home/agent/.hermes-web-ui
+      # 共享 hermes 源码（提供 hermes CLI）
+      - hermes-src:/opt/hermes
+    environment:
+      - PORT=6060
+      - HERMES_HOME=/home/agent/.hermes
+      # 指向共享 volume 中的 hermes CLI
+      - HERMES_BIN=${HERMES_BIN:-/opt/hermes/.venv/bin/hermes}
+      - AUTH_DISABLED=${AUTH_DISABLED:-false}
+      - PATH=/opt/hermes/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    restart: unless-stopped
+    networks:
+      - hermes-net
+
+volumes:
+  webui-data:
+  hermes-src:
+
+networks:
+  hermes-net:
+    driver: bridge
