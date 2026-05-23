@@ -104,3 +104,23 @@ fi
 # 软链接: ~/.local/bin/hermes-wrapper
 alias hr='hermes-wrapper'
 # endregion <<< Hermes Agent <<<
+
+# region: >>> Android 相关 >>>
+export ANDROID_HOME="$HOME/.env/android_sdk"
+# Android cmdline-tools
+export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+# Android build-tools
+export PATH="$ANDROID_HOME/build-tools/36.0.0:$PATH"
+# Android platform-tools
+export PATH="$ANDROID_HOME/platform-tools:$PATH"
+
+# apktool
+export PATH="$HOME/.env/apktool:$PATH"
+# smali / baksmali
+export PATH="$HOME/.env/smali:$PATH"
+# endregion <<< Android 相关 <<<
+
+# region: >>> ide 相关 >>>
+# Antigravity IDE
+export PATH="$HOME/.antigravity-ide/antigravity-ide/bin:$PATH"
+# endregion <<< ide 相关 <<<
