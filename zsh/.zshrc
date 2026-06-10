@@ -105,6 +105,13 @@ fi
 alias hr='hermes-wrapper'
 # endregion <<< Hermes Agent <<<
 
+# region: >>> java 相关 >>>
+# [Apache Maven](https://maven.apache.org/download.cgi)
+export APACHE_MAVEN_VERSION=3.9.16
+export MAVEN_HOME="$HOME/.env/apache-maven/$APACHE_MAVEN_VERSION"
+export PATH="$MAVEN_HOME/bin:$PATH"
+# endregion <<< java 相关 <<<
+
 # region: >>> Android 相关 >>>
 export ANDROID_HOME="$HOME/.env/android_sdk"
 # Android cmdline-tools
