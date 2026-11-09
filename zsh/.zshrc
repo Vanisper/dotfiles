@@ -100,11 +100,6 @@ fi
 # 加载 ~/.local/bin 下一些工具的环境变量
 . "$HOME/.local/bin/env"
 
-# region: >>> Hermes Agent >>>
-# 软链接: ~/.local/bin/hermes-wrapper
-alias hr='hermes-wrapper'
-# endregion <<< Hermes Agent <<<
-
 # region: >>> java 相关 >>>
 # [Apache Maven](https://maven.apache.org/download.cgi)
 export APACHE_MAVEN_VERSION=3.9.16
