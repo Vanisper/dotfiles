@@ -129,11 +129,6 @@ export PATH="$HOME/.env/apktool:$PATH"
 export PATH="$HOME/.env/smali:$PATH"
 # endregion <<< Android 相关 <<<
 
-# region: >>> ide 相关 >>>
-# Antigravity IDE
-export PATH="$HOME/.antigravity-ide/antigravity-ide/bin:$PATH"
-# endregion <<< ide 相关 <<<
-
 # region: >>> shell 补全 >>>
 autoload -Uz compinit
 compinit
