@@ -24,9 +24,8 @@ source "$ZSH_CONFIG_DIR/modules/tools/go.zsh"
 source "$ZSH_CONFIG_DIR/modules/tools/java.zsh"
 source "$ZSH_CONFIG_DIR/modules/tools/android.zsh"
 source "$ZSH_CONFIG_DIR/modules/tools/bun.zsh"
-source "$ZSH_CONFIG_DIR/modules/tools/kimi-code.zsh"
 source "$ZSH_CONFIG_DIR/modules/tools/pnpm.zsh"
-source "$ZSH_CONFIG_DIR/modules/tools/vite-plus.zsh"
+source "$ZSH_CONFIG_DIR/modules/tools/misc.zsh"
 source "$ZSH_CONFIG_DIR/modules/tools/yazi.zsh"
 
 # 别名
