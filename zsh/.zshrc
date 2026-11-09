@@ -30,10 +30,10 @@ source "$ZSH_CONFIG_DIR/modules/tools/rust.zsh"
 source "$ZSH_CONFIG_DIR/modules/tools/go.zsh"
 source "$ZSH_CONFIG_DIR/modules/tools/java.zsh"
 
-# Node/JS 生态（置后加载使 PATH 优先级最高；pnpm 由 fnm 的 corepack 提供）
+# Node/JS 生态（置后加载使 PATH 优先级最高；pnpm 须先于 fnm）
+source "$ZSH_CONFIG_DIR/modules/tools/pnpm.zsh"
 source "$ZSH_CONFIG_DIR/modules/tools/fnm.zsh"
 source "$ZSH_CONFIG_DIR/modules/tools/bun.zsh"
-source "$ZSH_CONFIG_DIR/modules/tools/pnpm.zsh"
 source "$ZSH_CONFIG_DIR/modules/tools/vite-plus.zsh"
 
 # Android 工具链
