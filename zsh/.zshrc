@@ -10,6 +10,9 @@ ZSH_CONFIG_DIR="${${(%):-%N}:A:h}"
 source "$ZSH_CONFIG_DIR/modules/common/helpers.zsh"
 source "$ZSH_CONFIG_DIR/modules/common/profile.zsh"
 
+# PATH 条目唯一化：重复 prepend 自动收敛（嵌套 shell 场景防叠加），保留先出现的一份
+typeset -U PATH path
+
 # 基础：历史记录、shell 补全、local/bin 环境
 source "$ZSH_CONFIG_DIR/modules/base/history.zsh"
 source "$ZSH_CONFIG_DIR/modules/base/completion.zsh"
