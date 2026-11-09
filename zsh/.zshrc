@@ -19,17 +19,28 @@ source "$ZSH_CONFIG_DIR/modules/base/completion.zsh"
 source "$ZSH_CONFIG_DIR/modules/base/local-bin.zsh"
 
 # 工具初始化与环境变量
-source "$ZSH_CONFIG_DIR/modules/tools/starship.zsh"
-source "$ZSH_CONFIG_DIR/modules/tools/fnm.zsh"
+# 终端增强（底层组件 → 应用层）
 source "$ZSH_CONFIG_DIR/modules/tools/fzf.zsh"
 source "$ZSH_CONFIG_DIR/modules/tools/zoxide.zsh"
+source "$ZSH_CONFIG_DIR/modules/tools/starship.zsh"
+source "$ZSH_CONFIG_DIR/modules/tools/yazi.zsh"
+
+# 语言工具链（偏后端前置）
+source "$ZSH_CONFIG_DIR/modules/tools/rust.zsh"
 source "$ZSH_CONFIG_DIR/modules/tools/go.zsh"
 source "$ZSH_CONFIG_DIR/modules/tools/java.zsh"
-source "$ZSH_CONFIG_DIR/modules/tools/android.zsh"
+
+# Node/JS 生态（置后加载使 PATH 优先级最高；pnpm 由 fnm 的 corepack 提供）
+source "$ZSH_CONFIG_DIR/modules/tools/fnm.zsh"
 source "$ZSH_CONFIG_DIR/modules/tools/bun.zsh"
 source "$ZSH_CONFIG_DIR/modules/tools/pnpm.zsh"
+source "$ZSH_CONFIG_DIR/modules/tools/vite-plus.zsh"
+
+# Android 工具链
+source "$ZSH_CONFIG_DIR/modules/tools/android.zsh"
+
+# 杂项
 source "$ZSH_CONFIG_DIR/modules/tools/misc.zsh"
-source "$ZSH_CONFIG_DIR/modules/tools/yazi.zsh"
 
 # 别名
 source "$ZSH_CONFIG_DIR/modules/aliases/basic.zsh"
