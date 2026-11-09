@@ -99,7 +99,13 @@ if command -v fzf >/dev/null 2>&1; then
 fi
 
 # 加载 ~/.local/bin 下一些工具的环境变量
-. "$HOME/.local/bin/env"
+source_if_exists "$HOME/.local/bin/env"
+
+# region: >>> go 相关 >>>
+export GOPATH=$HOME/go
+export GOBIN=$GOPATH/bin
+export PATH="$GOBIN:$PATH"
+# endregion <<< go 相关 >>>
 
 # region: >>> java 相关 >>>
 # [Apache Maven](https://maven.apache.org/download.cgi)
@@ -127,3 +133,33 @@ export PATH="$HOME/.env/smali:$PATH"
 # Antigravity IDE
 export PATH="$HOME/.antigravity-ide/antigravity-ide/bin:$PATH"
 # endregion <<< ide 相关 <<<
+
+# region: >>> shell 补全 >>>
+autoload -Uz compinit
+compinit
+# endregion <<< shell 补全 <<<
+
+# region: >>> bun 相关 >>>
+# bun completions
+source_if_exists "$HOME/.bun/_bun"
+
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
+# endregion <<< bun 相关 <<<
+
+# region: >>> kimi-code 相关 >>>
+export PATH="$HOME/.kimi-code/bin:$PATH"
+# endregion <<< kimi-code 相关 <<<
+
+# region: >>> pnpm 相关 >>>
+export PNPM_HOME="$HOME/Library/pnpm"
+case ":$PATH:" in
+  *":$PNPM_HOME:"*) ;;
+  *) export PATH="$PNPM_HOME:$PATH" ;;
+esac
+# endregion <<< pnpm 相关 <<<
+
+# region: >>> vite-plus 相关 >>>
+# https://viteplus.dev
+source_if_exists "$HOME/.config/vite-plus/env"
+# endregion <<< vite-plus 相关 <<<
