@@ -1,5 +1,8 @@
 # zsh profile
+#
+# 结构：基础 → 历史记录 → 插件 → 工具初始化 → 环境变量 → 函数 → 别名
 
+# region: >>> 基础 >>>
 source_if_exists() {
   local file="$1"
   [[ -f "$file" ]] && source "$file"
@@ -8,98 +11,43 @@ source_if_exists() {
 # Load profile if present
 # 仅非登录 shell 需要手动加载：登录 shell 系统已加载过 .zprofile，避免重复执行
 [[ ! -o login ]] && source_if_exists "$HOME/.zprofile"
+# endregion <<< 基础 <<<
 
-# Initialize starship prompt if installed
-if command -v starship >/dev/null 2>&1; then
-  eval "$(starship init zsh)"
-fi
-
-# Optional plugins
-source_if_exists "$HOME/.fzf.zsh"
-# source_if_exists /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
-
-# History
+# region: >>> 历史记录 >>>
 HISTFILE="$HOME/.history"
 HISTSIZE=50000
 SAVEHIST=50000
 setopt SHARE_HISTORY
 setopt HIST_IGNORE_DUPS
+# endregion <<< 历史记录 <<<
 
-# Development Environment
+# region: >>> 插件 >>>
+# Optional plugins
+source_if_exists "$HOME/.fzf.zsh"
+# source_if_exists /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+# endregion <<< 插件 <<<
+
+# region: >>> 工具初始化 >>>
+# Initialize starship prompt if installed
+if command -v starship >/dev/null 2>&1; then
+  eval "$(starship init zsh)"
+fi
+
 ## fnm - https://github.com/Schniz/fnm?tab=readme-ov-file#shell-setup
 if command -v fnm >/dev/null 2>&1; then
   eval "$(fnm env --use-on-cd --shell zsh)"
 fi
 
-# Yazi: cd to the last directory after quit
-## https://yazi-rs.github.io/docs/quick-start
-function y() {
-	local tmp="$(mktemp -t "yazi-cwd.XXXXXX")" cwd
-	command yazi "$@" --cwd-file="$tmp"
-	IFS= read -r -d '' cwd < "$tmp"
-	[ "$cwd" != "$PWD" ] && [ -d "$cwd" ] && builtin cd -- "$cwd"
-	rm -f -- "$tmp"
-}
-# Yazi alias
-# alias yi='yazi'
-
 # zoxide
 if command -v zoxide >/dev/null 2>&1; then
   eval "$(zoxide init zsh)"
 fi
+# endregion <<< 工具初始化 <<<
 
-# proxy switch
-alias pon='export https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 all_proxy=socks5://127.0.0.1:7890'
-alias poff='unset https_proxy http_proxy all_proxy'
-
-# Basic aliases
-alias cp='cp -i'
-alias mv='mv -i'
-alias rm='rm -i'
-
-if command -v eza >/dev/null 2>&1; then
-  alias ls='eza --hyperlink'
-  alias ll='ls -l --icons'
-  alias l='ll'
-  alias la='l -a'
-  alias lh='l -h'
-  alias lha='l -ha'
-else
-  alias ll='ls -lh'
-  alias la='ls -A'
-  alias lh='ls -lh'
-fi
-
-# Git aliases
-alias g='git'
-alias ginit='git init'
-alias ga='git add'
-alias gs='git status -s'
-alias gc='git commit'
-alias gl='git log --color --graph'
-alias gt='git tag -a'
-alias gf='git fetch'
-alias gpull='git pull origin'
-alias gpush='git push origin'
-alias gshow='git show'
-alias gcommit='git commit'
-alias gadd='git add'
-alias gremote='git remote'
-alias gcheckout='git checkout'
-alias gclone='git clone'
-alias greset='git reset'
-alias gmerge='git merge'
-alias gbranch='git branch'
-alias gcherry='git cherry-pick'
-alias gstash='git stash'
-alias gpop='git stash pop'
-
-if command -v fzf >/dev/null 2>&1; then
-  alias gcb="git branch | fzf --preview 'git show --color=always {-1}' | cut -c 3- | xargs git checkout"
-fi
-
+# region: >>> local/bin 环境 >>>
 # 加载 ~/.local/bin 下一些工具的环境变量
 source_if_exists "$HOME/.local/bin/env"
+# endregion <<< local/bin 环境 <<<
 
 # region: >>> go 相关 >>>
 export GOPATH=$HOME/go
@@ -158,3 +106,69 @@ esac
 # https://viteplus.dev
 source_if_exists "$HOME/.config/vite-plus/env"
 # endregion <<< vite-plus 相关 <<<
+
+# region: >>> 函数 >>>
+# Yazi: cd to the last directory after quit
+## https://yazi-rs.github.io/docs/quick-start
+function y() {
+	local tmp="$(mktemp -t "yazi-cwd.XXXXXX")" cwd
+	command yazi "$@" --cwd-file="$tmp"
+	IFS= read -r -d '' cwd < "$tmp"
+	[ "$cwd" != "$PWD" ] && [ -d "$cwd" ] && builtin cd -- "$cwd"
+	rm -f -- "$tmp"
+}
+# Yazi alias
+# alias yi='yazi'
+# endregion <<< 函数 <<<
+
+# region: >>> 别名 >>>
+# proxy switch
+alias pon='export https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 all_proxy=socks5://127.0.0.1:7890'
+alias poff='unset https_proxy http_proxy all_proxy'
+
+# Basic aliases
+alias cp='cp -i'
+alias mv='mv -i'
+alias rm='rm -i'
+
+if command -v eza >/dev/null 2>&1; then
+  alias ls='eza --hyperlink'
+  alias ll='ls -l --icons'
+  alias l='ll'
+  alias la='l -a'
+  alias lh='l -h'
+  alias lha='l -ha'
+else
+  alias ll='ls -lh'
+  alias la='ls -A'
+  alias lh='ls -lh'
+fi
+
+# Git aliases
+alias g='git'
+alias ginit='git init'
+alias ga='git add'
+alias gs='git status -s'
+alias gc='git commit'
+alias gl='git log --color --graph'
+alias gt='git tag -a'
+alias gf='git fetch'
+alias gpull='git pull origin'
+alias gpush='git push origin'
+alias gshow='git show'
+alias gcommit='git commit'
+alias gadd='git add'
+alias gremote='git remote'
+alias gcheckout='git checkout'
+alias gclone='git clone'
+alias greset='git reset'
+alias gmerge='git merge'
+alias gbranch='git branch'
+alias gcherry='git cherry-pick'
+alias gstash='git stash'
+alias gpop='git stash pop'
+
+if command -v fzf >/dev/null 2>&1; then
+  alias gcb="git branch | fzf --preview 'git show --color=always {-1}' | cut -c 3- | xargs git checkout"
+fi
+# endregion <<< 别名 <<<
